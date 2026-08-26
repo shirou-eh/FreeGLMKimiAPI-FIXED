@@ -26,19 +26,46 @@ function decodeJwt(token) {
   } catch { return {}; }
 }
 
+function loadExistingAccounts() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.resolve(outPath), 'utf8'));
+    const list = raw.accounts || (raw.id ? [raw] : []);
+    return Array.isArray(list) ? list : [];
+  } catch { return []; }
+}
 function saveAccount(token, cookieHeader = '') {
   const payload = decodeJwt(token);
+  const newId = payload.email || payload.id || `zai-${Date.now()}`;
+  const existing = loadExistingAccounts();
+  // check if account with same id/email/token already exists -> update it
+  const idx = existing.findIndex(a => a.id === newId || a.token === token || (a.provider==='glm' && (a.token===token)));
   const account = {
-    id: payload.email || payload.id || `zai-${Date.now()}`,
+    id: newId,
     provider: 'glm',
     backend: 'zai',
     token,
     browser_fallback: true
   };
   if (cookieHeader) account.cookie = cookieHeader;
+  let accounts;
+  if (idx >= 0) {
+    existing[idx] = { ...existing[idx], ...account };
+    accounts = existing;
+    console.log(`Updating existing account ${newId} (already in ${outPath})`);
+  } else {
+    // if existing has only one and it's the same email, treat as update, otherwise add
+    const sameEmailIdx = existing.findIndex(a => a.id === newId);
+    if (sameEmailIdx >=0) {
+      existing[sameEmailIdx] = { ...existing[sameEmailIdx], ...account };
+      accounts = existing;
+    } else {
+      accounts = [...existing, account];
+      if (existing.length > 0) console.log(`Adding new account ${newId} to ${outPath} (was ${existing.length}, now ${accounts.length})`);
+    }
+  }
   fs.mkdirSync(path.dirname(path.resolve(outPath)), { recursive: true });
-  fs.writeFileSync(outPath, JSON.stringify({ accounts: [account] }, null, 2), { mode: 0o600 });
-  console.log(JSON.stringify({ ok: true, outPath, email: payload.email || null, userId: payload.id || payload.user_id || null, browserFallback: true }, null, 2));
+  fs.writeFileSync(outPath, JSON.stringify({ accounts }, null, 2), { mode: 0o600 });
+  console.log(JSON.stringify({ ok: true, outPath, email: payload.email || null, userId: payload.id || payload.user_id || null, browserFallback: true, totalAccounts: accounts.length }, null, 2));
 }
 
 export function isGuestZaiPayload(payload = {}) {
@@ -91,11 +118,20 @@ async function main() {
   console.log(`Profile: ${profileDir}`);
   console.log(`Timeout: ${Math.round(timeoutMs / 1000)}s`);
 
+  const existingForCheck = loadExistingAccounts();
+  const existingTokens = new Set(existingForCheck.map(a=>a.token).filter(Boolean));
+  const existingIds = new Set(existingForCheck.map(a=>a.id).filter(Boolean));
+  if (existingForCheck.length > 0) {
+    console.log(`Found existing ${existingForCheck.length} account(s) in ${outPath}: ${[...existingIds].join(', ')}`);
+    console.log('To add a NEW account, either:');
+    console.log('  1) Log out in the browser and log in with a different Google, OR');
+    console.log('  2) Run with a new profile: ZAI_BROWSER_PROFILE_DIR=~/.free-glm-kimi-api/zai2 npm run auth:browser -- ./auth.json');
+    console.log('Waiting for a token (existing will be updated if same, new will be added)...');
+  }
   const started = Date.now();
   let warnedGuest = false;
+  let foundExistingAndWaited = false;
   while (Date.now() - started < timeoutMs) {
-    // Prefer localStorage: Z.ai may keep an early guest Authorization request in memory,
-    // while localStorage is already updated to the real logged-in account token.
     const localToken = await readToken(page);
     const candidates = [localToken, networkToken].filter(Boolean);
     const usable = candidates.map(token => ({ token, state: isUsableZaiAuthToken(token, { allowGuest: allowGuestAuth }) })).find(item => item.state.ok);
@@ -105,6 +141,16 @@ async function main() {
       console.log('Found only a temporary guest Z.ai token; keeping browser open until you log in with a real account.');
     }
     if (usable) {
+      const isAlreadySaved = existingTokens.has(usable.token) || existingIds.has(decodeJwt(usable.token).email) || existingIds.has(decodeJwt(usable.token).id);
+      // if it's already saved and we haven't waited for a new one, give user 15s to switch account
+      if (isAlreadySaved && !foundExistingAndWaited && existingForCheck.length>0) {
+        if (!foundExistingAndWaited) {
+          console.log(`Found existing account ${decodeJwt(usable.token).email || 'unknown'} already in ${outPath}. Waiting 15s for you to switch to a DIFFERENT account (log out / use another Google) if you want to ADD new...`);
+          foundExistingAndWaited = true;
+          await new Promise(r => setTimeout(r, 15000));
+          continue; // check again for a different token
+        }
+      }
       const cookies = await cookieHeader(page).catch(() => '');
       saveAccount(usable.token, cookies);
       await browser.close();

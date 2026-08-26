@@ -47,6 +47,6 @@ export function preparePrompt(messages=[], tools=[], { simpleTools=false, isMult
     if (idx >= 0) relevant = copied.slice(idx).filter(m => m.role === 'user');
   }
   let text = relevant.map(m => `${m.role === 'system' ? 'System' : m.role === 'assistant' ? 'Assistant' : m.role === 'tool' ? 'Tool' : 'User'}: ${m.content}`).join('\n\n');
-  if (toolPrompt) text = `${text.trim()}\n\n${toolPrompt}`;
+  if (toolPrompt) text = `System: ${toolPrompt}\n\n${text.trim()}`;
   return text.trim();
 }

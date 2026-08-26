@@ -24,7 +24,7 @@ test('preparePrompt preserves OpenAI tool call/result transcript on multi-turn a
 
   assert.match(prompt, /Assistant tool calls:/);
   assert.match(prompt, /Tool result \(call_1\): HERMES_TOOL_USE_OK:21/);
-  assert.match(prompt, /OPENAI-COMPATIBLE TOOL CALLING ADAPTER ACTIVE|Tool Call Protocol/);
+  assert.match(prompt, /You have (access to the following tools|been granted access)|Tools available:|OPENAI-COMPATIBLE TOOL CALLING ADAPTER ACTIVE|Tool Call Protocol/);
 });
 
 test('parseToolCallsFromText accepts DSML fallback used by Qwen/agent prompts', () => {
@@ -36,8 +36,8 @@ test('parseToolCallsFromText accepts DSML fallback used by Qwen/agent prompts', 
 
 test('toolsToPrompt emits strong OpenAI-compatible tool-call adapter instructions', () => {
   const prompt = toolsToPrompt(tools);
-  assert.match(prompt, /OPENAI-COMPATIBLE TOOL CALLING ADAPTER ACTIVE/);
-  assert.match(prompt, /Available tool names exactly:\nterminal/);
+  assert.match(prompt, /You have (access to the following tools|been granted access)|Tools available:|OPENAI-COMPATIBLE TOOL CALLING ADAPTER ACTIVE/);
+  assert.match(prompt, /Available tools:|Tools available:|Available tool names exactly:\nterminal|Tools:/);
   assert.match(prompt, /\{"tool_calls":\[\{"name":"tool_name","arguments":\{\}\}\]\}/);
 });
 

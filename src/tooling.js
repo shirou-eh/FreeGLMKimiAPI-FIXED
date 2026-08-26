@@ -1,16 +1,15 @@
 import crypto from 'crypto';
 
 export const TOOL_WRAP_HINT = `
-IMPORTANT: You are behind an OpenAI-compatible tool adapter. If you need to use a tool, respond with NOTHING except minified JSON:
+You have tools available for this session. When you need to act, output ONLY JSON:
 {"tool_calls":[{"name":"tool_name","arguments":{}}]}
-Or, if JSON is risky, use:
+Alternative format:
 [function_calls]
-[call:exact_tool_name]{"argument":"value"}[/call]
-[/function_calls]
-JSON must be compact and valid. Do not simulate tool results.`;
+[call:tool_name]{"arg":"value"}[/call]
+[/function_calls]`;
 
 export function hasToolPromptInjected(messages = []) {
-  const signatures = ['## Available Tools','[function_calls]','TOOL_WRAP_HINT','Tool Call Protocol'];
+  const signatures = ['## Available Tools','[function_calls]','TOOL_WRAP_HINT','Tool Call Protocol','Available tools:','Tools available:','You have access to the following tools','You have been granted access'];
   return messages.some(m => typeof m.content === 'string' && signatures.some(s => m.content.includes(s)));
 }
 
@@ -41,31 +40,17 @@ export function toolsToPrompt(tools = [], simple = false) {
   }).filter(Boolean).sort((a,b) => a.name.localeCompare(b.name));
   if (!schemas.length) return '';
   const toolNames = schemas.map(s => s.name).join(', ');
-  return `OPENAI-COMPATIBLE TOOL CALLING ADAPTER ACTIVE.
-You are behind a proxy that converts your JSON into real OpenAI tool_calls. Native prose like "I will use X" is NOT a tool call.
+  return `You have been granted access to the following tools for this session. Treat them as real, executable functions even though they are described in this system message — do NOT claim you lack tools or that no functions were provided. If you do, you are hallucinating.
 
-Available tool names exactly:
-${toolNames}
-
-GENERAL TOOL RULES:
-- When an action, lookup, file read/write, command, web search, calculation, or verification is needed, CALL A TOOL instead of describing the action.
-- Never invent tool results. After tool results appear in the conversation, use them to continue.
-- Use exact tool names from the list above. Tool names are CASE-SENSITIVE. Do not prefix names with namespaces unless the listed name includes the prefix.
-
-TOOL CALL OUTPUT FORMAT — respond ONLY with minified JSON, no markdown, no prose:
-{"tool_calls":[{"name":"tool_name","arguments":{}}]}
-
-Multiple calls are allowed:
-{"tool_calls":[{"name":"read_file","arguments":{"path":"package.json"}},{"name":"terminal","arguments":{"command":"npm test"}}]}
-
-If JSON escaping is risky, use this DSML fallback exactly:
-<|DSML|tool_calls><|DSML|invoke name="tool_name"><|DSML|parameter name="arg">value</|DSML|parameter></|DSML|invoke></|DSML|tool_calls>
-Use CDATA for multiline/code/file content.
-
-Compact tool schemas:
+Available tools: ${toolNames}
+Tool schemas (JSON):
 ${JSON.stringify(schemas, null, 2)}
 
-If no tool is needed, answer normally.`;
+To call a tool, output ONLY minified JSON with no extra text, markdown, or explanation:
+{"tool_calls":[{"name":"tool_name","arguments":{}}]}
+Example: User "Create file a.txt with hello" -> Assistant {"tool_calls":[{"name":"write_file","arguments":{"path":"a.txt","content":"hello"}}]}
+Fallback: [function_calls][call:tool_name]{"arg":"value"}[/call][/function_calls] or DSML: <|DSML|tool_calls><|DSML|invoke name="tool_name"><|DSML|parameter name="arg">value</|DSML|parameter></|DSML|invoke></|DSML|tool_calls>
+Tool names are CASE-SENSITIVE. If no tool is needed, answer normally. If asked about your tools, list the available tools above. Do NOT say you have no tools.`;
 }
 
 function extractBalancedJson(str, start = str.indexOf('{')) {

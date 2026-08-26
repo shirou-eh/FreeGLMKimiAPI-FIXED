@@ -1,4 +1,5 @@
 import http from 'http';
+import os from 'os';
 import { pathToFileURL } from 'node:url';
 import { PORT, HOST, MODELS, WATERMARK, MOCK_PROVIDER, AUTH_PATH, GLM_BACKEND, resolveModel, requireProxyAuth } from './config.js';
 import { AccountManager } from './accounts.js';
@@ -186,12 +187,29 @@ async function handleAdmin(req,res,url){
   if (m && req.method==='DELETE') return json(res,200,{deleted:accountManager.delete(decodeURIComponent(m[1]),{persist:persistFrom(url)})});
   return false;
 }
+function setCors(res, req){
+  const origin = req.headers.origin || '*';
+  res.setHeader('Access-Control-Allow-Origin', process.env.CORS_ORIGIN || origin === 'null' ? '*' : origin);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, anthropic-version, x-agent-id');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Type');
+  if (process.env.CORS_ALLOW_CREDENTIALS === '1') res.setHeader('Access-Control-Allow-Credentials', 'true');
+}
 async function router(req,res){
+  setCors(res, req);
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
   try {
     const url=new URL(req.url, `http://${req.headers.host}`);
     if (!requireProxyAuth(req)) return json(res,401,{error:{message:'Unauthorized',type:'auth_error'}});
     if (url.pathname.startsWith('/admin/')) { const handled=await handleAdmin(req,res,url); if (handled !== false) return; }
-    if (req.method==='GET' && (url.pathname==='/' || url.pathname==='/health')) return json(res,200,{ok:true,name:'FreeGLMKimiAPI',mock:MOCK_PROVIDER,accounts:accountManager.list(),watermark:WATERMARK});
+    if (req.method==='GET' && url.pathname==='/') {
+      const host = req.headers.host || `${HOST}:${PORT}`;
+      const proto = req.headers['x-forwarded-proto'] || 'http';
+      res.writeHead(200, {'Content-Type':'text/html; charset=utf-8'});
+      res.end(`<!doctype html><html><head><meta charset="utf-8"><title>FreeGLMKimiAPI</title><style>body{font-family:Inter,Segoe UI,sans-serif;background:#0a0a0f;color:#e5e7eb;padding:40px;max-width:800px;margin:auto}code{background:#1a1a2e;padding:2px 6px;border-radius:4px}a{color:#8A6CFF}</style></head><body><h1>FreeGLMKimiAPI — FIXED</h1><p>GLM-5.3-Flash (Agent/DeepThink/Max) • <code>${proto}://${host}</code></p><ul><li><a href="/health">/health</a> — статус</li><li><a href="/v1/models">/v1/models</a> — модели</li><li><code>POST /v1/chat/completions</code> — OpenAI</li><li><code>POST /v1/messages</code> — Anthropic</li></ul><p>Подключение по hostname: <code>${proto}://${host}/v1</code> — работает с любого устройства в сети, если <code>HOST=0.0.0.0</code>. Для доступа извне открой порт ${PORT} в брандмауэре.</p><p>Пример: <code>base_url="http://${host}/v1"</code></p></body></html>`);
+      return;
+    }
+    if (req.method==='GET' && url.pathname==='/health') return json(res,200,{ok:true,name:'FreeGLMKimiAPI',mock:MOCK_PROVIDER,accounts:accountManager.list(),watermark:WATERMARK, host: req.headers.host, remote: req.socket.remoteAddress});
     if (req.method==='GET' && (url.pathname==='/v1/models' || url.pathname==='/models')) return json(res,200,{object:'list',data:Object.keys(MODELS).map(id=>({id,object:'model',created:0,owned_by:MODELS[id].provider}))});
     if (req.method==='GET' && url.pathname==='/sessions') return json(res,200,{sessions:store.dump()});
     if (req.method==='POST' && (url.pathname==='/v1/chat/completions' || url.pathname==='/chat/completions')) return await handleChat(req,res,await readBody(req));
@@ -204,4 +222,12 @@ export const server=http.createServer(router);
 // Use pathToFileURL so the "is main module" check matches import.meta.url on
 // Windows too (argv[1] uses backslashes + drive letter; a raw `file://` concat
 // never matches the file:/// URL, so the server silently never listened).
-if (import.meta.url === pathToFileURL(process.argv[1]).href) server.listen(PORT, HOST, () => console.log(`FreeGLMKimiAPI ${HOST}:${PORT} mock=${MOCK_PROVIDER}`));
+if (import.meta.url === pathToFileURL(process.argv[1]).href) server.listen(PORT, HOST, () => {
+  console.log(`FreeGLMKimiAPI ${HOST}:${PORT} mock=${MOCK_PROVIDER}`);
+  try {
+    console.log(`Local:    http://localhost:${PORT}/`);
+    console.log(`Network:  http://${os.hostname()}:${PORT}/  (HOST=${HOST} — доступен по hostname/IP, если брандмауэр открыт)`);
+    console.log(`Health:   http://${os.hostname()}:${PORT}/health`);
+  } catch {}
+  console.log(`CORS: ${process.env.CORS_ORIGIN || '*'}  (OPTIONS handled)`);
+});

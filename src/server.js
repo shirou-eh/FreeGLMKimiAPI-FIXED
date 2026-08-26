@@ -119,16 +119,6 @@ async function doCompletion(body){
         accountManager.markFailure(account.id, e);
         session.accountId='';
         if (attempt === maxAttempts - 1) {
-          // fallback for WAF 405 / captcha when browser not available — return a helpful mock instead of raw 405
-          const msg = String(e.message||'');
-          if (/405|FRONTEND_CAPTCHA_REQUIRED|Please refresh|WAF|aliyun/i.test(msg)) {
-            const lastUserTmp = [...(body.messages||[])].reverse().find(m=>m.role==='user');
-            const userTextTmp = lastUserTmp ? (typeof lastUserTmp.content==='string' ? lastUserTmp.content : JSON.stringify(lastUserTmp.content)) : 'привет';
-            // generate a realistic fallback response via mockComplete, but mark as fallback
-            const fallbackText = await mockComplete({ prompt: userTextTmp, model: modelCfg.id, tools: body.tools });
-            result = { text: fallbackText + '\n\n[fallback: Z.ai WAF 405, used mock — поставь chromium deps или прокси для реального ответа]', prompt: userTextTmp, reasoning: 'Fallback due to Z.ai WAF 405 / captcha — browser not available or IP blocked. Used mockComplete.' };
-            break;
-          }
           throw lastError;
         }
       }

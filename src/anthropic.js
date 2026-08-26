@@ -44,6 +44,9 @@ function safeJson(value) { try { return JSON.parse(value || '{}'); } catch { ret
 export function openAIToAnthropic(resp) {
   const ch=resp.choices?.[0] || {}; const msg=ch.message || {};
   const content=[];
+  // thinking / reasoning block first (Anthropic expects thinking before text)
+  const reasoning = msg.reasoning_content || msg.reasoning || msg.thinking || '';
+  if (reasoning) content.push({ type:'thinking', thinking: reasoning });
   if (msg.tool_calls?.length) {
     for (const tc of msg.tool_calls) content.push({ type:'tool_use', id:tc.id, name:tc.function.name, input: safeJson(tc.function.arguments) });
     return { id: resp.id, type:'message', role:'assistant', model:resp.model, content, stop_reason:'tool_use', stop_sequence:null, usage:{ input_tokens:resp.usage?.prompt_tokens||0, output_tokens:resp.usage?.completion_tokens||0 } };

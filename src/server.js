@@ -18,7 +18,16 @@ function json(res,status,obj){ const data=JSON.stringify(obj); res.writeHead(sta
 async function readBody(req){ const chunks=[]; for await (const c of req) chunks.push(c); const raw=Buffer.concat(chunks).toString('utf8'); return raw ? JSON.parse(raw) : {}; }
 function selectAccount(provider, session){ if (MOCK_PROVIDER) return { id:`mock-${provider}`, provider }; return accountManager.select(provider, session); }
 function providerFor(modelCfg, account){ if (modelCfg.provider==='kimi') return new KimiProvider(account); const backend=(account.backend || account.endpoint || GLM_BACKEND).toLowerCase(); return backend==='chatglm' || backend==='chatglm.cn' ? new GLMProvider(account) : new ZaiProvider(account); }
-function textCompletion(content, model, prompt='', reasoning=''){ const msg={role:'assistant',content}; if(reasoning) msg.reasoning_content=reasoning; return { id:`fgk-${Date.now()}`, object:'chat.completion', created:Math.floor(Date.now()/1000), model, choices:[{index:0,message:msg,finish_reason:'stop'}], usage:usage(prompt,content), watermark:WATERMARK }; }
+function textCompletion(content, model, prompt='', reasoning=''){
+  const msg={role:'assistant',content};
+  if(reasoning){
+    msg.reasoning_content=reasoning;
+    msg.reasoning=reasoning;
+    // for clients that expect thinking block
+    msg.thinking=reasoning;
+  }
+  return { id:`fgk-${Date.now()}`, object:'chat.completion', created:Math.floor(Date.now()/1000), model, choices:[{index:0,message:msg,finish_reason:'stop'}], usage:usage(prompt,content), watermark:WATERMARK };
+}
 function sseChunk(res,obj){ res.write(`data: ${JSON.stringify(obj)}\n\n`); }
 async function doCompletion(body){
   const modelCfg=resolveModel(body.model); const agentId=body.user || body.metadata?.user_id || body.headers?.['x-agent-id'] || 'default'; const session=store.get(agentId, modelCfg.provider);
@@ -172,8 +181,21 @@ async function handleChat(req,res,body){
   const out=await doCompletion(body);
   if (body.stream) {
     res.writeHead(200, {'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive'});
-    if (out.choices[0].message.tool_calls) sseChunk(res,{...out, object:'chat.completion.chunk', choices:[{index:0,delta:{role:'assistant',tool_calls:out.choices[0].message.tool_calls},finish_reason:'tool_calls'}]});
-    else { sseChunk(res,{id:out.id,object:'chat.completion.chunk',created:out.created,model:out.model,choices:[{index:0,delta:{role:'assistant'},finish_reason:null}]}); sseChunk(res,{id:out.id,object:'chat.completion.chunk',created:out.created,model:out.model,choices:[{index:0,delta:{content:out.choices[0].message.content},finish_reason:null}]}); sseChunk(res,{id:out.id,object:'chat.completion.chunk',created:out.created,model:out.model,choices:[{index:0,delta:{},finish_reason:'stop'}]}); }
+    const msg = out.choices[0].message;
+    if (msg.tool_calls) {
+      sseChunk(res,{...out, object:'chat.completion.chunk', choices:[{index:0,delta:{role:'assistant',tool_calls:msg.tool_calls},finish_reason:'tool_calls'}]});
+    } else {
+      // first chunk role
+      sseChunk(res,{id:out.id,object:'chat.completion.chunk',created:out.created,model:out.model,choices:[{index:0,delta:{role:'assistant'},finish_reason:null}]});
+      // reasoning / thinking chunk (for DeepThink) — many clients expect reasoning_content in delta
+      const reasoning = msg.reasoning_content || msg.reasoning || msg.thinking || '';
+      if (reasoning) {
+        // send as reasoning_content and also as thinking for compatibility
+        sseChunk(res,{id:out.id,object:'chat.completion.chunk',created:out.created,model:out.model,choices:[{index:0,delta:{reasoning_content:reasoning, reasoning:reasoning, thinking:reasoning},finish_reason:null}]});
+      }
+      if (msg.content) sseChunk(res,{id:out.id,object:'chat.completion.chunk',created:out.created,model:out.model,choices:[{index:0,delta:{content:msg.content},finish_reason:null}]});
+      sseChunk(res,{id:out.id,object:'chat.completion.chunk',created:out.created,model:out.model,choices:[{index:0,delta:{},finish_reason:'stop'}]});
+    }
     res.end('data: [DONE]\n\n'); return;
   }
   json(res,200,out);

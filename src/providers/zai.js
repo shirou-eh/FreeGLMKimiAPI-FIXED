@@ -5,20 +5,20 @@ import { getZaiBrowserClient, isZaiCaptchaError, shouldUseZaiBrowserFallback } f
 export const ZAI_BASE = 'https://chat.z.ai';
 export const ZAI_FE_VERSION = process.env.ZAI_FE_VERSION || 'prod-fe-1.1.91';
 
-// map user-facing OpenAI model ids -> real chat.z.ai backend ids (from /api/models)
-// x-preview-l is the backend id for GLM-5.3-Flash (see Z.ai docs 08-2026)
+// map user-facing OpenAI model ids -> real chat.z.ai backend ids
+// use glm-5.3 as backend for flash variants to avoid 405 on x-preview-l via /api/v2/chat/completions
 const ZAI_MODEL_MAP = {
-  'glm-5.3-flash': 'x-preview-l',
-  'glm-5.3-flash-chat': 'x-preview-l',
-  'glm-5.3-flash-thinking': 'x-preview-l',
-  'glm-5.3-flash-deepthink': 'x-preview-l',
-  'glm-5.3-flash-search': 'x-preview-l',
-  'glm-5.3-flash-deepresearch': 'x-preview-l',
-  'glm-5.3-flash-max': 'x-preview-l',
-  'glm-5.3-flash-agent': 'x-preview-l',
-  'glm-5.3-flash-agent-search': 'x-preview-l',
-  'glm-53-flash': 'x-preview-l',
-  'glm-53-flash-thinking': 'x-preview-l',
+  'glm-5.3-flash': 'glm-5.3-flash',
+  'glm-5.3-flash-chat': 'glm-5.3-flash',
+  'glm-5.3-flash-thinking': 'glm-5.3-flash',
+  'glm-5.3-flash-deepthink': 'glm-5.3-flash',
+  'glm-5.3-flash-search': 'glm-5.3-flash',
+  'glm-5.3-flash-deepresearch': 'glm-5.3-flash',
+  'glm-5.3-flash-max': 'glm-5.3-flash',
+  'glm-5.3-flash-agent': 'glm-5.3-flash',
+  'glm-5.3-flash-agent-search': 'glm-5.3-flash',
+  'glm-53-flash': 'glm-5.3-flash',
+  'glm-53-flash-thinking': 'glm-5.3-flash',
 };
 export function mapZaiModel(id) {
   if (!id) return id;

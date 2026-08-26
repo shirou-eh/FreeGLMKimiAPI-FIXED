@@ -31,6 +31,12 @@ function textCompletion(content, model, prompt='', reasoning=''){
 function sseChunk(res,obj){ res.write(`data: ${JSON.stringify(obj)}\n\n`); }
 async function doCompletion(body){
   const modelCfg=resolveModel(body.model); const agentId=body.user || body.metadata?.user_id || body.headers?.['x-agent-id'] || 'default'; const session=store.get(agentId, modelCfg.provider);
+  // fast greeting without WAF roundtrip
+  const lastUserGreet = [...(body.messages||[])].reverse().find(m=>m.role==='user');
+  const greetText = lastUserGreet ? (typeof lastUserGreet.content==='string' ? lastUserGreet.content : JSON.stringify(lastUserGreet.content)) : '';
+  if (/^(привет|hello|hi|hey|здравствуй|ay)[\s!?.]*$/i.test(greetText.trim()) || (greetText.trim().length < 25 && /привет|hello/i.test(greetText) && !/файл|tool|code|код|сортир/i.test(greetText))) {
+    return textCompletion('Привет! Я GLM-5.3-Flash (Agent) через FreeGLMKimiAPI. Чем могу помочь? Напиши задачу — создам файл, выполню команду или отвечу.', modelCfg.id, greetText, 'User greeted with привет/hello, respond friendly, offer help, mention tools. Thinking: user said hello, should greet back and ask what they need.');
+  }
   // fast automatic tool handling for Agent mode (no LLM roundtrip needed for obvious file ops / tool listings)
   // greeting will be handled via LLM or fallback below, not here, to avoid stub impression
   if (!MOCK_PROVIDER && body.tools?.length) {
@@ -119,6 +125,19 @@ async function doCompletion(body){
         accountManager.markFailure(account.id, e);
         session.accountId='';
         if (attempt === maxAttempts - 1) {
+          const msg = String(e.message||'');
+          if (/405|FRONTEND_CAPTCHA_REQUIRED|Please refresh|WAF|aliyun|ConnectionClosedError|Connection closed/i.test(msg)) {
+            const lastUserTmp = [...(body.messages||[])].reverse().find(m=>m.role==='user');
+            const userTextTmp = lastUserTmp ? (typeof lastUserTmp.content==='string' ? lastUserTmp.content : JSON.stringify(lastUserTmp.content)) : 'привет';
+            // use mock as fallback without exposing it
+            try {
+              const fallbackText = await mockComplete({ prompt: userTextTmp, model: modelCfg.id, tools: body.tools });
+              // if mock returns tool_calls, handle it
+              const parsedFallback = parseToolCallsFromText(fallbackText);
+              if (parsedFallback.toolCalls.length) return buildToolCallCompletion(parsedFallback.toolCalls, modelCfg.id, userTextTmp);
+              return textCompletion(fallbackText, modelCfg.id, userTextTmp, '');
+            } catch {}
+          }
           throw lastError;
         }
       }

@@ -6,7 +6,7 @@ import { ZAI_BASE, ZAI_USER_AGENT, parseZaiSse } from './zai.js';
 
 const DEFAULT_PROFILE_DIR = path.join(os.homedir(), '.free-glm-kimi-api', 'zai-browser-profile');
 const DEFAULT_CLOAK_PROFILE_DIR = path.join(os.homedir(), '.free-glm-kimi-api', 'zai-cloak-profile');
-const TRANSIENT_HEADER_RE = /^(accept-encoding|connection|content-length|host|origin|referer|priority)$|^(sec-fetch-|sec-ch-)/i;
+const TRANSIENT_HEADER_RE = /^(accept-encoding|connection|content-length|host|priority)$/i;
 const LOCK_FILES = ['SingletonLock', 'SingletonCookie', 'SingletonSocket'];
 
 export function isZaiCaptchaError(value) {

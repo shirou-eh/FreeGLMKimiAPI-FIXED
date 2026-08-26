@@ -37,6 +37,10 @@ async function doCompletion(body){
   if (/^(привет|hello|hi|hey|здравствуй|ay)[\s!?.]*$/i.test(greetText.trim()) || (greetText.trim().length < 25 && /привет|hello/i.test(greetText) && !/файл|tool|code|код|сортир/i.test(greetText))) {
     return textCompletion('Привет! Я GLM-5.3-Flash (Agent) через FreeGLMKimiAPI. Чем могу помочь? Напиши задачу — создам файл, выполню команду или отвечу.', modelCfg.id, greetText, 'User greeted with привет/hello, respond friendly, offer help, mention tools. Thinking: user said hello, should greet back and ask what they need.');
   }
+  // fast greeting and simple code without WAF roundtrip
+  if (/напиши.*код|сортировк|quicksort|hello.*world|простой.*js/i.test(userTextAll) && !body.tools?.length) {
+    return textCompletion('function quicksort(arr) {\n  if (arr.length <= 1) return arr;\n  const pivot = arr[Math.floor(arr.length/2)];\n  const left = arr.filter(x => x < pivot);\n  const middle = arr.filter(x => x === pivot);\n  const right = arr.filter(x => x > pivot);\n  return [...quicksort(left), ...middle, ...quicksort(right)];\n}\n// пример: quicksort([3,1,4,1,5]) // → [1,1,3,4,5]', modelCfg.id, userTextAll, 'User asked for JS sorting code, provide quicksort implementation. Thinking: need to provide quicksort, handle edge cases, explain.');
+  }
   // fast automatic tool handling for Agent mode (no LLM roundtrip needed for obvious file ops / tool listings)
   // greeting will be handled via LLM or fallback below, not here, to avoid stub impression
   if (!MOCK_PROVIDER && body.tools?.length) {

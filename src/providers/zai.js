@@ -3,7 +3,27 @@ import { preparePrompt } from '../message.js';
 import { getZaiBrowserClient, isZaiCaptchaError, shouldUseZaiBrowserFallback } from './zaiBrowser.js';
 
 export const ZAI_BASE = 'https://chat.z.ai';
-export const ZAI_FE_VERSION = process.env.ZAI_FE_VERSION || 'prod-fe-1.1.46';
+export const ZAI_FE_VERSION = process.env.ZAI_FE_VERSION || 'prod-fe-1.1.91';
+
+// map user-facing OpenAI model ids -> real chat.z.ai backend ids (from /api/models)
+// x-preview-l is the backend id for GLM-5.3-Flash (see Z.ai docs 08-2026)
+const ZAI_MODEL_MAP = {
+  'glm-5.3-flash': 'x-preview-l',
+  'glm-5.3-flash-chat': 'x-preview-l',
+  'glm-5.3-flash-thinking': 'x-preview-l',
+  'glm-5.3-flash-deepthink': 'x-preview-l',
+  'glm-5.3-flash-search': 'x-preview-l',
+  'glm-5.3-flash-deepresearch': 'x-preview-l',
+  'glm-5.3-flash-max': 'x-preview-l',
+  'glm-5.3-flash-agent': 'x-preview-l',
+  'glm-5.3-flash-agent-search': 'x-preview-l',
+  'glm-53-flash': 'x-preview-l',
+  'glm-53-flash-thinking': 'x-preview-l',
+};
+export function mapZaiModel(id) {
+  if (!id) return id;
+  return ZAI_MODEL_MAP[id] || ZAI_MODEL_MAP[id.toLowerCase()] || id;
+}
 export const ZAI_USER_AGENT = process.env.ZAI_USER_AGENT || 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36';
 export const ZAI_ACCEPT_LANGUAGE = process.env.ZAI_ACCEPT_LANGUAGE || 'en-US';
 export const ZAI_LANGUAGE = process.env.ZAI_LANGUAGE || 'ru-RU';
@@ -137,9 +157,10 @@ export function buildZaiRequest({ token, model='glm-5', prompt='', chatId='', pa
 export class ZaiProvider {
   constructor(account){ this.account=account; this.token=account.token || account.accessToken || account.access_token || account.jwt || account.refresh_token || account.refreshToken; this.cookie = account.cookie || account.cookies || process.env.ZAI_COOKIE || null; this.captchaVerifyParam = account.captcha_verify_param || account.captchaVerifyParam || process.env.ZAI_CAPTCHA_VERIFY_PARAM || null; this.browserFallback = shouldUseZaiBrowserFallback(process.env, account); if(!this.token) throw new Error('Z.ai token missing'); }
   async createChat(model, prompt) {
+    const realModel = mapZaiModel(model);
     const timestamp = Math.floor(Date.now()/1000);
     const messageId = randomUuid();
-    const body = { chat: { id:'', title:'New Chat', models:[model], params:{}, history:{ messages: prompt ? { [messageId]: { id:messageId, parentId:null, childrenIds:[], role:'user', content:prompt, timestamp, models:[model] } } : {}, currentId: prompt ? messageId : '' }, tags:[], flags:[], features:[{type:'tool_selector',server:'tool_selector_h',status:'hidden'}], mcp_servers:[], enable_thinking:false, auto_web_search:false, message_version:1, extra:{}, timestamp:Date.now() } };
+    const body = { chat: { id:'', title:'New Chat', models:[realModel], params:{}, history:{ messages: prompt ? { [messageId]: { id:messageId, parentId:null, childrenIds:[], role:'user', content:prompt, timestamp, models:[realModel] } } : {}, currentId: prompt ? messageId : '' }, tags:[], flags:[], features:[{type:'tool_selector',server:'tool_selector_h',status:'hidden'}], mcp_servers:[], enable_thinking:false, auto_web_search:false, message_version:1, extra:{}, timestamp:Date.now() } };
     const resp = await fetch(`${ZAI_BASE}/api/v1/chats/new`, { method:'POST', headers:{ Authorization:`Bearer ${this.token}`, 'Content-Type':'application/json', 'Accept-Language':ZAI_ACCEPT_LANGUAGE, 'X-FE-Version':ZAI_FE_VERSION, 'X-Region':'overseas', Cookie:buildCookie(this.token, this.cookie), Origin:ZAI_BASE, Referer:`${ZAI_BASE}/`, 'User-Agent':ZAI_USER_AGENT }, body:JSON.stringify(body) });
     const data = await resp.json().catch(()=>null);
     if (!resp.ok || !data?.id) throw new Error(`Z.ai create chat failed HTTP ${resp.status}: ${JSON.stringify(data).slice(0,200)}`);
@@ -147,14 +168,15 @@ export class ZaiProvider {
   }
   async complete({ messages, modelCfg, tools, session }) {
     const prompt = preparePrompt(messages, tools, { simpleTools:false, isMultiTurn:!!session.providerSessionId });
+    const backendModel = mapZaiModel(modelCfg.id);
     let chatId = session.providerSessionId || '';
     let parentId = session.parentMessageId || null;
     if (!chatId) {
-      const created = await this.createChat(modelCfg.id, prompt);
+      const created = await this.createChat(backendModel, prompt);
       chatId = created.chatId;
       parentId = created.messageId;
     }
-    const req = buildZaiRequest({ token:this.token, model:modelCfg.id, prompt, chatId, parentMessageId:parentId, thinking:modelCfg.thinking, webSearch:modelCfg.webSearch, captchaVerifyParam:this.captchaVerifyParam, cookie:this.cookie });
+    const req = buildZaiRequest({ token:this.token, model:backendModel, prompt, chatId, parentMessageId:parentId, thinking:modelCfg.thinking, webSearch:modelCfg.webSearch, captchaVerifyParam:this.captchaVerifyParam, cookie:this.cookie });
     const resp = await fetch(req.url, { method:'POST', headers:req.headers, body:JSON.stringify(req.body) });
     const raw = await resp.text();
     if (!resp.ok) {

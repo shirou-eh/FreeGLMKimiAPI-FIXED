@@ -12,10 +12,26 @@ export const API_KEYS = String(process.env.API_KEYS || '').split(',').map(s => s
 export const GLM_BACKEND = (process.env.GLM_BACKEND || 'zai').toLowerCase();
 
 export const MODELS = {
+  // GLM-5 legacy
   'glm-5': { provider: 'glm', thinking: false, webSearch: false, deepResearch: false },
   'glm-5-thinking': { provider: 'glm', thinking: true, webSearch: false, deepResearch: false },
   'glm-5-search': { provider: 'glm', thinking: false, webSearch: true, deepResearch: false },
   'glm-5-deepresearch': { provider: 'glm', thinking: false, webSearch: true, deepResearch: true },
+  // GLM-5.3 / GLM-5.3-Flash — main target (chat.z.ai, General API: glm-5.3, Flash = fast)
+  // Flash default = Agent mode (thinking:true) per user request; -chat variant is explicit Chat without thinking
+  'glm-5.3': { provider: 'glm', thinking: true, webSearch: false, deepResearch: false },
+  'glm-5.3-flash': { provider: 'glm', thinking: true, webSearch: false, deepResearch: false },
+  'glm-5.3-flash-chat': { provider: 'glm', thinking: false, webSearch: false, deepResearch: false },
+  'glm-5.3-flash-thinking': { provider: 'glm', thinking: true, webSearch: false, deepResearch: false },
+  'glm-5.3-flash-deepthink': { provider: 'glm', thinking: true, webSearch: false, deepResearch: false },
+  'glm-5.3-flash-search': { provider: 'glm', thinking: true, webSearch: true, deepResearch: false },
+  'glm-5.3-flash-deepresearch': { provider: 'glm', thinking: true, webSearch: true, deepResearch: true },
+  'glm-5.3-flash-max': { provider: 'glm', thinking: true, webSearch: true, deepResearch: true },
+  'glm-5.3-flash-agent': { provider: 'glm', thinking: true, webSearch: false, deepResearch: false },
+  'glm-5.3-flash-agent-search': { provider: 'glm', thinking: true, webSearch: true, deepResearch: false },
+  // aliases without dot
+  'glm-53-flash': { provider: 'glm', thinking: true, webSearch: false, deepResearch: false },
+  'glm-53-flash-thinking': { provider: 'glm', thinking: true, webSearch: false, deepResearch: false },
   'kimi-k2.5': { provider: 'kimi', thinking: false, webSearch: false },
   'kimi-k2.5-thinking': { provider: 'kimi', thinking: true, webSearch: false },
   'kimi-k2.5-search': { provider: 'kimi', thinking: false, webSearch: true },
@@ -24,8 +40,10 @@ export const MODELS = {
 export function resolveModel(model = DEFAULT_MODEL) {
   const id = String(model || DEFAULT_MODEL);
   if (MODELS[id]) return { id, ...MODELS[id] };
-  if (id.toLowerCase().startsWith('glm')) return { id, provider: 'glm', thinking: /think|zero|reason/i.test(id), webSearch: /search|web/i.test(id), deepResearch: /research/i.test(id) };
-  if (id.toLowerCase().startsWith('kimi')) return { id, provider: 'kimi', thinking: /think|r1|reason/i.test(id), webSearch: /search|web/i.test(id) };
+  // normalization: support any glm-5.3-flash variants with suffixes thinking/deepthink/max/agent/search/research
+  const low = id.toLowerCase();
+  if (low.startsWith('glm')) return { id, provider: 'glm', thinking: /think|deepthink|reason|agent|max/i.test(id), webSearch: /search|web/i.test(id), deepResearch: /research|max/i.test(id) };
+  if (low.startsWith('kimi')) return { id, provider: 'kimi', thinking: /think|r1|reason/i.test(id), webSearch: /search|web/i.test(id) };
   return { id: DEFAULT_MODEL, ...MODELS[DEFAULT_MODEL] };
 }
 

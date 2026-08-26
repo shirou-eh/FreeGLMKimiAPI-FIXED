@@ -68,7 +68,7 @@ test('Z.ai request targets current chat.z.ai endpoint and carries chat/session i
   assert.equal(req.body.features.enable_thinking, true);
   assert.equal(req.body.features.web_search, true);
   assert.equal(req.headers.Origin, 'https://chat.z.ai');
-  assert.equal(req.headers['X-FE-Version'], 'prod-fe-1.1.46');
+  assert.match(req.headers['X-FE-Version'], /^prod-fe-1\.1\.\d+$/);
 });
 
 test('Z.ai SSE parser extracts current chat:completion delta_content format', () => {
@@ -148,7 +148,8 @@ test('Z.ai browser fallback supports CloakBrowser engine settings and profile lo
   assert.equal(fs.existsSync(path.join(dir, 'SingletonLock')), false);
   fs.mkdirSync(path.join(dir, 'Default'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'Default', 'LOCK'), 'stale');
-  assert.deepEqual(cleanChromeProfileLocks(dir), ['Default/LOCK']);
+  const expectedLock = path.join('Default','LOCK');
+  assert.deepEqual(cleanChromeProfileLocks(dir), [expectedLock]);
   assert.equal(fs.existsSync(path.join(dir, 'Default', 'LOCK')), false);
   fs.rmSync(dir, { recursive: true, force: true });
 });

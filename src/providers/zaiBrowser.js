@@ -259,8 +259,19 @@ export class ZaiBrowserClient {
   }
 
   async humanFillPrompt(page, prompt) {
-    const selector = 'textarea';
-    await page.waitForSelector(selector, { timeout: Number(this.env.ZAI_BROWSER_NAV_TIMEOUT || 60_000) });
+    const selectors = ['textarea', 'div[contenteditable="true"]', '[role="textbox"]', 'div[data-testid="chat-input"]'];
+    let selector = null;
+    for (const sel of selectors) {
+      try {
+        await page.waitForSelector(sel, { timeout: 5000 });
+        selector = sel;
+        break;
+      } catch {}
+    }
+    if (!selector) {
+      await page.waitForSelector('textarea', { timeout: Number(this.env.ZAI_BROWSER_NAV_TIMEOUT || 60_000) });
+      selector = 'textarea';
+    }
     await sleep(randInt(250, 900));
     await page.click(selector).catch(() => null);
     await sleep(randInt(120, 350));
@@ -274,14 +285,20 @@ export class ZaiBrowserClient {
     if (page.type) {
       await page.type(selector, prompt, { delay });
     } else {
-      await page.evaluate((value) => {
-        const textarea = document.querySelector('textarea');
-        if (!textarea) throw new Error('Z.ai prompt textarea not found');
-        textarea.focus();
-        textarea.value = value;
-        textarea.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value }));
-        textarea.dispatchEvent(new Event('change', { bubbles: true }));
-      }, prompt);
+      await page.evaluate((value, sel) => {
+        const el = document.querySelector(sel) || document.querySelector('textarea');
+        if (!el) throw new Error('Z.ai prompt input not found for ' + sel);
+        el.focus();
+        if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
+          el.value = value;
+          el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        } else {
+          // contenteditable
+          el.textContent = value;
+          el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value }));
+        }
+      }, prompt, selector);
     }
     await sleep(randInt(250, 850));
   }

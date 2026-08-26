@@ -3,7 +3,15 @@ import { preparePrompt } from '../message.js';
 import { getZaiBrowserClient, isZaiCaptchaError, shouldUseZaiBrowserFallback } from './zaiBrowser.js';
 
 export const ZAI_BASE = 'https://chat.z.ai';
-export const ZAI_FE_VERSION = process.env.ZAI_FE_VERSION || 'prod-fe-1.1.91';
+let _cachedFeVersion = process.env.ZAI_FE_VERSION || null;
+export let ZAI_FE_VERSION = _cachedFeVersion || 'prod-fe-1.1.91';
+// auto-fetch latest FE version in background (non-blocking)
+if (!_cachedFeVersion) {
+  fetch(`${ZAI_BASE}/`, { headers: { 'User-Agent': 'Mozilla/5.0' } }).then(r=>r.text()).then(t=>{
+    const m = t.match(/prod-fe-[0-9.]+/);
+    if (m) { ZAI_FE_VERSION = m[0]; console.log(`[Z.ai] auto-detected FE version: ${ZAI_FE_VERSION}`); }
+  }).catch(()=>{});
+}
 
 // map user-facing OpenAI model ids -> real chat.z.ai backend ids
 // use glm-5.3 as backend for flash variants to avoid 405 on x-preview-l via /api/v2/chat/completions
@@ -177,29 +185,20 @@ export class ZaiProvider {
       parentId = created.messageId;
     }
     const req = buildZaiRequest({ token:this.token, model:backendModel, prompt, chatId, parentMessageId:parentId, thinking:modelCfg.thinking, webSearch:modelCfg.webSearch, captchaVerifyParam:this.captchaVerifyParam, cookie:this.cookie });
-    const resp = await fetch(req.url, { method:'POST', headers:req.headers, body:JSON.stringify(req.body) });
-    const raw = await resp.text();
-    if (!resp.ok) {
-      if (this.browserFallback) {
-        const browser = getZaiBrowserClient();
-        const browserResult = await browser.completeAndParse(req, { token:this.token, chatId });
-        if (!browserResult.ok) throw new Error(`Z.ai browser HTTP ${browserResult.status}: ${browserResult.raw.slice(0,200)}`);
-        const browserParsed = browserResult.parsed;
-        if (browserParsed.error) throw new Error(`Z.ai browser error: ${browserParsed.error}`);
-        return { text: browserParsed.text || browserResult.raw, reasoning: browserParsed.reasoning, providerSessionId: browserParsed.providerSessionId || chatId, parentMessageId: browserParsed.parentMessageId || req.messageId, prompt };
-      }
-      throw new Error(`Z.ai HTTP ${resp.status}: ${raw.slice(0,200)}`);
-    }
-    let parsed = parseZaiSse(raw);
-    if (parsed.error && this.browserFallback && isZaiCaptchaError(parsed.error)) {
+    // if browser fallback is enabled, go directly via browser to avoid WAF 405 on direct fetch
+    if (this.browserFallback) {
       const browser = getZaiBrowserClient();
       const browserResult = await browser.completeAndParse(req, { token:this.token, chatId });
-      if (!browserResult.ok) throw new Error(`Z.ai browser HTTP ${browserResult.status}: ${browserResult.raw.slice(0,200)}`);
-      parsed = browserResult.parsed;
+      if (!browserResult.ok) throw new Error(`Z.ai browser HTTP ${browserResult.status}: ${browserResult.raw.slice(0,400)}`);
+      const parsed = browserResult.parsed;
       if (parsed.error) throw new Error(`Z.ai browser error: ${parsed.error}`);
-    } else if (parsed.error) {
-      throw new Error(`Z.ai error: ${parsed.error}`);
+      return { text: parsed.text || browserResult.raw, reasoning: parsed.reasoning, providerSessionId: parsed.providerSessionId || chatId, parentMessageId: parsed.parentMessageId || req.messageId, prompt };
     }
+    const resp = await fetch(req.url, { method:'POST', headers:req.headers, body:JSON.stringify(req.body) });
+    const raw = await resp.text();
+    if (!resp.ok) throw new Error(`Z.ai HTTP ${resp.status}: ${raw.slice(0,400)}`);
+    let parsed = parseZaiSse(raw);
+    if (parsed.error) throw new Error(`Z.ai error: ${parsed.error}`);
     return { text: parsed.text || raw, reasoning: parsed.reasoning, providerSessionId: parsed.providerSessionId || chatId, parentMessageId: parsed.parentMessageId || req.messageId, prompt };
   }
 }

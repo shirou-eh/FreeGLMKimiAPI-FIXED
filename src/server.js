@@ -40,6 +40,9 @@ async function doCompletion(body){
       const desc = `Available tools for ${modelCfg.id} (Agent mode): ${names}. Each tool can be called via JSON {"tool_calls":[{"name":"tool_name","arguments":{}}]}. Example: "Create file test.txt with hello" -> write_file. Ask me to use any tool and I will call it.`;
       return textCompletion(desc, modelCfg.id, userTextFast);
     }
+    if (/^(привет|hello|hi|hey|здравствуй|привет,? как дела\??|how are you)[\s!?.]*$/i.test(userTextFast.trim()) || (userTextFast.trim().length < 20 && /привет|hello/i.test(userTextFast))) {
+      return textCompletion('Привет! Я GLM-5.3-Flash (Agent) через FreeGLMKimiAPI. Чем могу помочь? Напиши задачу — создам файл, выполню команду или отвечу.', modelCfg.id, userTextFast, 'User greeted with привет, respond friendly, offer help, mention tools.');
+    }
     if (/create file|write file|save file|создай файл|запиши файл/i.test(userTextFast)) {
       const tool = body.tools.find(t=>/write|create|save/i.test((t.function||t).name||''));
       if (tool) {

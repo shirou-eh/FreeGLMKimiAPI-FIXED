@@ -31,13 +31,8 @@ function textCompletion(content, model, prompt='', reasoning=''){
 function sseChunk(res,obj){ res.write(`data: ${JSON.stringify(obj)}\n\n`); }
 async function doCompletion(body){
   const modelCfg=resolveModel(body.model); const agentId=body.user || body.metadata?.user_id || body.headers?.['x-agent-id'] || 'default'; const session=store.get(agentId, modelCfg.provider);
-  // fast greeting for привет/hello without LLM (avoids WAF 405 when browser not available)
-  const lastUserAll = [...(body.messages||[])].reverse().find(m=>m.role==='user');
-  const userTextAll = lastUserAll ? (typeof lastUserAll.content==='string' ? lastUserAll.content : JSON.stringify(lastUserAll.content)) : '';
-  if (/^(привет|hello|hi|hey|здравствуй|привет,? как дела\??|how are you|ay)[\s!?.]*$/i.test(userTextAll.trim()) || (userTextAll.trim().length < 20 && /привет|hello/i.test(userTextAll))) {
-    return textCompletion('Привет! Я GLM-5.3-Flash (Agent) через FreeGLMKimiAPI. Чем могу помочь? Напиши задачу — создам файл, выполню команду или отвечу.', modelCfg.id, userTextAll, 'User greeted with привет/hello, respond friendly, offer help, mention tools. Thinking: user said hello, should greet back and ask what they need.');
-  }
   // fast automatic tool handling for Agent mode (no LLM roundtrip needed for obvious file ops / tool listings)
+  // greeting will be handled via LLM or fallback below, not here, to avoid stub impression
   if (!MOCK_PROVIDER && body.tools?.length) {
     const lastUserFast = [...(body.messages||[])].reverse().find(m=>m.role==='user');
     const userTextFast = lastUserFast ? (typeof lastUserFast.content==='string' ? lastUserFast.content : JSON.stringify(lastUserFast.content)) : '';
@@ -123,7 +118,19 @@ async function doCompletion(body){
         lastError=e;
         accountManager.markFailure(account.id, e);
         session.accountId='';
-        if (attempt === maxAttempts - 1) throw lastError;
+        if (attempt === maxAttempts - 1) {
+          // fallback for WAF 405 / captcha when browser not available — return a helpful mock instead of raw 405
+          const msg = String(e.message||'');
+          if (/405|FRONTEND_CAPTCHA_REQUIRED|Please refresh|WAF|aliyun/i.test(msg)) {
+            const lastUserTmp = [...(body.messages||[])].reverse().find(m=>m.role==='user');
+            const userTextTmp = lastUserTmp ? (typeof lastUserTmp.content==='string' ? lastUserTmp.content : JSON.stringify(lastUserTmp.content)) : 'привет';
+            // generate a realistic fallback response via mockComplete, but mark as fallback
+            const fallbackText = await mockComplete({ prompt: userTextTmp, model: modelCfg.id, tools: body.tools });
+            result = { text: fallbackText + '\n\n[fallback: Z.ai WAF 405, used mock — поставь chromium deps или прокси для реального ответа]', prompt: userTextTmp, reasoning: 'Fallback due to Z.ai WAF 405 / captcha — browser not available or IP blocked. Used mockComplete.' };
+            break;
+          }
+          throw lastError;
+        }
       }
     }
   }

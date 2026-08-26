@@ -427,7 +427,7 @@ AUTH_PATH=/tmp/auth.json MODEL=glm-5.3-flash npm run smoke:zai
 
 - Примеры: [docs/request-examples.md](docs/request-examples.md)
 - CloakBrowser: [docs/cloakbrowser-notes.md](docs/cloakbrowser-notes.md)
-- Канал: [t.me/forgetmeai](https://t.me/forgetmeai)
+- Канал: [t.me/aetherisstudio](https://t.me/aetherisstudio) • Оригинал [t.me/forgetmeai](https://t.me/forgetmeai)
 
 ---
 

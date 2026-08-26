@@ -1,7 +1,7 @@
 import path from 'path';
 import { AccountManager } from './accounts.js';
 
-export const WATERMARK = 't.me/forgetmeai';
+export const WATERMARK = 't.me/aetherisstudio';
 export const PORT = Number(process.env.PORT || 9766);
 export const HOST = process.env.HOST || '0.0.0.0';
 export const DEFAULT_PROVIDER = process.env.DEFAULT_PROVIDER || 'kimi';
